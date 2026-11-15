@@ -1,0 +1,93 @@
+name: Build Binaries
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  workflow_dispatch:   # 允许手动运行
+
+permissions:
+  contents: write      # 用于创建 Release
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            exe_name: iptv-rust.exe
+            asset_name: iptv-rust-windows-amd64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            exe_name: iptv-rust
+            asset_name: iptv-rust-linux-amd64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-src
+
+      - name: Build release
+        working-directory: rust-src
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare files
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp rust-src/target/${{ matrix.target }}/release/${{ matrix.exe_name }} dist/
+          else
+            cp rust-src/target/${{ matrix.target }}/release/${{ matrix.exe_name }} dist/
+            chmod +x dist/${{ matrix.exe_name }}
+          fi
+          cp channels.yaml dist/
+          
+          # 生成校验文件
+          cd dist
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            certutil -hashfile ${{ matrix.exe_name }} SHA256 | findstr /v "hash" > ${{ matrix.exe_name }}.sha256
+          else
+            sha256sum ${{ matrix.exe_name }} > ${{ matrix.exe_name }}.sha256
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: dist/*
+
+  # 打标签时自动创建 Release
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/iptv-rust-windows-amd64/*
+            artifacts/iptv-rust-linux-amd64/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
