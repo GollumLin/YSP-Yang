@@ -49,18 +49,16 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            cp rust-src/target/${{ matrix.target }}/release/${{ matrix.exe_name }} dist/
-          else
-            cp rust-src/target/${{ matrix.target }}/release/${{ matrix.exe_name }} dist/
+          cp rust-src/target/${{ matrix.target }}/release/${{ matrix.exe_name }} dist/
+          if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
             chmod +x dist/${{ matrix.exe_name }}
           fi
           cp channels.yaml dist/
-          
-          # 生成校验文件
+
           cd dist
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            certutil -hashfile ${{ matrix.exe_name }} SHA256 | findstr /v "hash" > ${{ matrix.exe_name }}.sha256
+            # 更可靠的 Windows SHA256 生成方式
+            certutil -hashfile ${{ matrix.exe_name }} SHA256 | findstr /R /C:"[0-9A-Fa-f]*" > ${{ matrix.exe_name }}.sha256
           else
             sha256sum ${{ matrix.exe_name }} > ${{ matrix.exe_name }}.sha256
           fi
